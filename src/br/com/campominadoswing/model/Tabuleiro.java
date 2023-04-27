@@ -1,17 +1,30 @@
 package br.com.campominadoswing.model;
 
-import br.com.campominadoswing.exception.ExplosaoException;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 
-public class Tabuleiro {
-    private int linhas;
-    private int colunas;
-    private int minas;
+public class Tabuleiro implements CampoObservador {
+    private final int linhas;
+    private final int colunas;
+    private final int minas;
+
+    public int getLinhas() {
+        return linhas;
+    }
+
+    public int getColunas() {
+        return colunas;
+    }
+
+    public int getMinas() {
+        return minas;
+    }
 
     private final List<Campo> campos = new ArrayList<>();
+    private final List<Consumer<Boolean>> observadores = new ArrayList<>();
 
     public Tabuleiro(int linhas, int colunas, int minas) {
         this.linhas = linhas;
@@ -22,18 +35,26 @@ public class Tabuleiro {
         associarVizinhos();
         sorteaMinas();
     }
+    public void paraCada(Consumer<Campo> funcao){
+        campos.forEach(funcao);
+    }
+
+    public void registrarObservador(Consumer<Boolean> observador) {
+        observadores.add(observador);
+    }
+
+    private void notificarObservadores(Boolean resultado) {
+        observadores.stream()
+                .forEach(o -> o.accept(resultado));
+    }
+
 
     public void abrir(int linha, int coluna) {
-        try {
+
             campos.parallelStream()
                     .filter(campo -> campo.getLinha() == linha && campo.getColuna() == coluna)
                     .findFirst()
                     .ifPresent(campo -> campo.abrir());
-
-        } catch (ExplosaoException e) {
-            campos.forEach(campo -> campo.setAberto(true));
-            throw e;
-        }
     }
 
     public void alternaMarcacao(int linha, int coluna) {
@@ -46,8 +67,9 @@ public class Tabuleiro {
     private void gerarCampo() {
         for (int linha = 0; linha < linhas; linha++) {
             for (int coluna = 0; coluna < colunas; coluna++) {
-                campos.add(new Campo(linha, coluna));
-
+                Campo campo = new Campo(linha, coluna);
+                campo.registrarObservadores(this);
+                campos.add(campo);
             }
         }
     }
@@ -58,9 +80,7 @@ public class Tabuleiro {
                 c1.adicionarVizinho(c2);
             }
         }
-
     }
-
     private void sorteaMinas() {
         long minasArmadas = 0;
         Predicate<Campo> minado = campo -> campo.isMinado();
@@ -80,29 +100,20 @@ public class Tabuleiro {
         campos.stream().forEach(campo -> campo.reniciar());
         sorteaMinas();
     }
-
-    public String toString() {
-        StringBuilder stringBuilder = new StringBuilder();
-        stringBuilder.append("  ");
-        for (int coluna = 0; coluna < colunas; coluna++) {
-            stringBuilder.append(" ");
-            stringBuilder.append(coluna);
-            stringBuilder.append(" ");
+    @Override
+    public void evento(Campo campo, CampoEvento evento) {
+        if (evento == CampoEvento.EXPLODIR) {
+            mostrarMinas();
+            notificarObservadores(false);
+        } else if (objetivoAlcancado()) {
+            notificarObservadores(true);
         }
-        stringBuilder.append("\n");
-
-        int i = 0;
-        for (int linha = 0; linha < linhas; linha++) {
-            stringBuilder.append(linha);
-            stringBuilder.append(" ");
-            for (int coluna = 0; coluna < colunas; coluna++) {
-                stringBuilder.append(" ");
-                stringBuilder.append(campos.get(i));
-                stringBuilder.append(" ");
-                i++;
-            }
-            stringBuilder.append("\n");
-        }
-        return stringBuilder.toString();
     }
+    public void mostrarMinas(){
+        campos.stream()
+                .filter(c ->  c.isMinado())
+                .filter(c -> !c.isMarcado())
+                .forEach(c -> c.setAberto(true));
+    }
+
 }
